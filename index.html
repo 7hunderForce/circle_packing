@@ -1,230 +1,153 @@
 <!DOCTYPE html>
 <head>
-	<meta charset="utf-8">
+    <meta charset="utf-8">
+    <title>Circle Packing</title>
+    <style>
+        /*svg{
+            width:100%;
+            height:100%;
+        }*/
+        .node {
+            cursor: pointer;
+        }
 
-	<!-- D3.js -->
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.6/d3.min.js" charset="utf-8"></script>
-	<script src="https://d3js.org/queue.v1.min.js"></script>
+        .node:hover {
+            stroke: rgb(20, 62, 155);
+            stroke-width: 1.5px;
+        }
 
-	<!-- jQuery -->
-	<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+        .node--leaf {
+            fill: rgb(221, 217, 217);
+        }
 
-	<!-- Stylesheet -->
-	<style>
-		body { text-align: center; }
-	</style>
-	
+        .label {
+            color: darkred;
+            font: 16px "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-weight: bold;
+            text-anchor: middle;
+            text-shadow: 0 1px 0 #fff, 1px 0 0 #fff, -1px 0 0 #fff, 0 -1px 0 #fff;
+        }
+
+        .label,
+        .node--root,
+        .node--leaf {
+            pointer-events: none;
+        }
+
+    </style>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
+    
 </head>
 <body>
+    <main class="text-center">
+        <section class="container">
 
-	<div id="chart"></div>
-	<script>
-		queue() 
-			.defer(d3.json, "occupation.json")
-			.await(drawAll);
-			
-		function drawAll(error, dataset) {
-			////////////////////////////////////////////////////////////// 
-			////////////////// Create Set-up variables  ////////////////// 
-			////////////////////////////////////////////////////////////// 
+            <svg width="900" height="900"></svg>
+            
+            <script src="https://d3js.org/d3.v4.min.js"></script>
+            <script>
 
-			var width = Math.max($("#chart").width(),350) - 20,
-				height = (window.innerWidth < 768 ? width : window.innerHeight - 20);
+            var svg = d3.select("svg"),
+                margin = 20,
+                diameter = +svg.attr("width"),
+                g = svg.append("g").attr("transform", "translate(" + diameter / 2 + "," + diameter / 2 + ")");
 
-			var mobileSize = (window.innerWidth < 768 ? true : false);
+            
+            var color = d3.scaleLinear()
+                //.domain([-1, 5]) // 0 = the background
+                .domain([1, 5])
+                //.range(["hsl(152,80%,80%)", "hsl(228,30%,40%)"])
+                .range(["hsl(0,0%,80%)", "hsl(0,0%,25%)"])
+                .interpolate(d3.interpolateHcl);
+            /* 
+            var color = d3.scaleOrdinal()
+                .domain([0,1,2,3])
+                .range(['#bfbfbf','#838383','#4c4c4c','#1c1c1c']);
+            */
 
-			var centerX = width/2,
-				centerY = height/2;
-			////////////////////////////////////////////////////////////// 
-			/////////////////////// Create SVG  /////////////////////// 
-			////////////////////////////////////////////////////////////// 
-			
-			//Create the visible canvas and context
-			var canvas  = d3.select("#chart").append("canvas")
-				.attr("id", "canvas")
-				.attr("width", width)
-				.attr("height", height);
-			var context = canvas.node().getContext("2d");
-				context.clearRect(0, 0, width, height);
-			
-			//Create a hidden canvas in which each circle will have a different color
-			//We can use this to capture the clicked on circle
-			var hiddenCanvas  = d3.select("#chart").append("canvas")
-				.attr("id", "hiddenCanvas")
-				.attr("width", width)
-				.attr("height", height)
-				.style("display","none");	
-			var hiddenContext = hiddenCanvas.node().getContext("2d");
-				hiddenContext.clearRect(0, 0, width, height);
+            var pack = d3.pack()
+                .size([diameter - margin, diameter - margin])
+                .padding(2);
 
-			//Create a custom element, that will not be attached to the DOM, to which we can bind the data
-			var detachedContainer = document.createElement("custom");
-			var dataContainer = d3.select(detachedContainer);
+            d3.json("data/snc.json", function(error, root) {
+                if (error) throw error;
 
-			////////////////////////////////////////////////////////////// 
-			/////////////////////// Create Scales  /////////////////////// 
-			////////////////////////////////////////////////////////////// 
+                root = d3.hierarchy(root)
+                    .sum(function(d) { return d.size; })
+                    .sort(function(a, b) { return b.value - a.value; });
 
-			var colorCircle = d3.scale.ordinal()
-					.domain([0,1,2,3])
-					.range(['#bfbfbf','#838383','#4c4c4c','#1c1c1c']);
+                var focus = root,
+                    nodes = pack(root).descendants(),
+                    view;
 
-			var diameter = Math.min(width*0.9, height*0.9);
-			var pack = d3.layout.pack()
-				.padding(1)
-				.size([diameter, diameter])
-				.value(function(d) { return d.size; })
-				.sort(function(d) { return d.ID; });
+                var circle = g.selectAll("circle")
+                    .data(nodes)
+                    .enter().append("circle")
+                    .attr("class", function(d) { return d.parent ? d.children ? "node" : "node node--leaf" : "node node--root"; })
+                    .style("fill", function(d) { return d.children ? color(d.depth) : null; })
+                    .on("click", function(d) { if (focus !== d) zoom(d), d3.event.stopPropagation(); });
 
-			////////////////////////////////////////////////////////////// 
-			////////////////// Create Circle Packing /////////////////////
-			////////////////////////////////////////////////////////////// 
+                var text = g.selectAll("text")
+                    .data(nodes)
+                    .enter().append("text")
+                    .attr("class", "label")
+                    .style("fill-opacity", function(d) { return d.parent === root ? 1 : 0; })
+                    .style("display", function(d) { return d.parent === root ? "inline" : "none"; })
+                    .text(function(d) { 
+                        if (typeof d.data.size !== 'undefined') return d.data.name +'('+ d.data.size +')';
+                        else  return d.data.name
+                
+                    });
+                    //.text(function(d) { return d.data.name +'\n\r('+ d.data.size +')'; });
+                    //.text(function(d) { return d.data.name + (d.children ? "" : ": " + format(d.data.size)); });
+                
+                var value = g.selectAll("value")
+                    .data(nodes)
+                    .enter().append("value")
+                    .attr("class", "label")
+                    .style("fill-opacity", function(d) { return d.parent === root ? 1 : 0; })
+                    .style("display", function(d) { return d.parent === root ? "inline" : "none"; })
+                    .text(function(d) { return d.data.name; });
 
-			var nodes = pack.nodes(dataset),
-				root = dataset,
-				focus = dataset;		
-			
-			//Dataset to swtich between color of a circle (in the hidden canvas) and the node data	
-			var colToCircle = {};
-			
-			//Create the circle packing as if it was a normal D3 thing
-			var dataBinding = dataContainer.selectAll(".node")
-				.data(nodes)
-				.enter().append("circle")
-				.attr("id", function(d,i) { return "nodeCircle_"+i; })
-				.attr("class", function(d,i) { return d.parent ? d.children ? "node" : "node node--leaf" : "node node--root"; })
-				.attr("r", function(d) { return d.r; })
-				.attr("cx", 0)
-				.attr("cy", 0)
-				.attr("fill", function(d) { return d.children ? colorCircle(d.depth) : "white"; });
-				//.attr("transform", function(d) { return "translate(" + (d.x - v[0]) * k + "," + (d.y - v[1]) * k + ")"; });;
-			
-			//First zoom to get the circles to the right location
-			zoomToCanvas(root);
-			
-			////////////////////////////////////////////////////////////// 
-			///////////////// Canvas draw function ///////////////////////
-			////////////////////////////////////////////////////////////// 
-			
-			//The draw function of the canvas that gets called on each frame
-			function drawCanvas(chosenContext, hidden) {
 
-			  //Clear canvas
-			  chosenContext.fillStyle = "#fff";
-			  chosenContext.rect(0,0,canvas.attr("width"),canvas.attr("height"));
-			  chosenContext.fill();
-			  
-			  //Select our dummy nodes and draw the data to canvas.
-			  var elements = dataContainer.selectAll(".node");
-			  elements.each(function(d) {
-				  
-				var node = d3.select(this);
 
-				//If the hidden canvas was send into this function
-				//and it does not yet have a color, generate a unique one
-				if(hidden) {
-					if(node.attr("color") === null) {
-					  // If we have never drawn the node to the hidden canvas get a new color for it and put it in the dictionary.
-					  node.attr("color", genColor());
-					  colToCircle[node.attr("color")] = node;
-					}//if
-					// On the hidden canvas each rectangle gets a unique color.
-					chosenContext.fillStyle = node.attr("color");
-				} else {
-					chosenContext.fillStyle = node.attr("fill");
-				}//else
-				
-				//Draw each circle
-				chosenContext.beginPath();
-				chosenContext.arc((centerX + +node.attr("cx")), (centerY + +node.attr("cy")), node.attr("r"), 0,  2 * Math.PI, true);
-				chosenContext.fill();
-				chosenContext.closePath();
-				
-			  })
-			}//function drawCanvas
+                var node = g.selectAll("circle,text");
 
-			////////////////////////////////////////////////////////////// 
-			/////////////////// Click functionality ////////////////////// 
-			////////////////////////////////////////////////////////////// 
-			
-			// Listen for clicks on the main canvas
-			document.getElementById("canvas").addEventListener("click", function(e){
-			  // We actually only need to draw the hidden canvas when there is an interaction. 
-			  // This sketch can draw it on each loop, but that is only for demonstration.
-			  drawCanvas(hiddenContext, true);
+                svg
+                    .style("background", color(-1))
+                    .on("click", function() { zoom(root); });
 
-			  //Figure out where the mouse click occurred.
-			  var mouseX = e.layerX;
-			  var mouseY = e.layerY;
+                zoomTo([root.x, root.y, root.r * 2 + margin]);
 
-			  // Get the corresponding pixel color on the hidden canvas and look up the node in our map.
-			  // This will return that pixel's color
-			  var col = hiddenContext.getImageData(mouseX, mouseY, 1, 1).data;
-			  //Our map uses these rgb strings as keys to nodes.
-			  var colString = "rgb(" + col[0] + "," + col[1] + ","+ col[2] + ")";
-			  var node = colToCircle[colString];
+                function zoom(d) {
+                    var focus0 = focus; focus = d;
 
-			  if(node) {
-				chosen = dataContainer.selectAll("#"+node.attr("id"))[0][0].__data__;
-				//Zoom to the clicked on node
-				if (focus !== chosen) zoomToCanvas(chosen); else zoomToCanvas(root);
-			  }//if
-			});
+                    var transition = d3.transition()
+                        .duration(d3.event.altKey ? 7500 : 750)
+                        .tween("zoom", function(d) {
+                            var i = d3.interpolateZoom(view, [focus.x, focus.y, focus.r * 2 + margin]);
+                            return function(t) { zoomTo(i(t)); };
+                        });
 
-			////////////////////////////////////////////////////////////// 
-			///////////////////// Zoom Function //////////////////////////
-			////////////////////////////////////////////////////////////// 
+                    transition.selectAll("text")
+                    .filter(function(d) { return d.parent === focus || this.style.display === "inline"; })
+                        .style("fill-opacity", function(d) { return d.parent === focus ? 1 : 0; })
+                        .on("start", function(d) { if (d.parent === focus) this.style.display = "inline"; })
+                        .on("end", function(d) { if (d.parent !== focus) this.style.display = "none"; });
+                }
 
-			//Zoom into the clicked on circle
-			//Use the dataContainer to do the transition on
-			//The canvas will continuously redraw whatever happens to these circles
-			function zoomToCanvas(d) {
-				focus = d;
-				var v = [focus.x, focus.y, focus.r * 2.05],
-					k = diameter / v[2]; 
-					
-				dataContainer.selectAll(".node")
-					.transition().duration(2000)
-					.attr("cx", function(d) { return (d.x - v[0]) * k; })
-					.attr("cy", function(d) { return (d.y - v[1]) * k; })
-					.attr("r", function(d) { return d.r * k; });
+                function zoomTo(v) {
+                    var k = diameter / v[2]; view = v;
+                    node.attr("transform", function(d) { return "translate(" + (d.x - v[0]) * k + "," + (d.y - v[1]) * k + ")"; });
+                        circle.attr("r", function(d) { return d.r * k; });
+                }
 
-			}//function zoomToCanvas
-			
-			////////////////////////////////////////////////////////////// 
-			//////////////////// Other Functions /////////////////////////
-			////////////////////////////////////////////////////////////// 
-			
-			//Generates the next color in the sequence, going from 0,0,0 to 255,255,255.
-			//From: https://bocoup.com/weblog/2d-picking-in-canvas
-			var nextCol = 1;
-			function genColor(){
-				var ret = [];
-				// via http://stackoverflow.com/a/15804183
-				if(nextCol < 16777215){
-				  ret.push(nextCol & 0xff); // R
-				  ret.push((nextCol & 0xff00) >> 8); // G 
-				  ret.push((nextCol & 0xff0000) >> 16); // B
+            });
 
-				  nextCol += 100; // This is exagerated for this example and would ordinarily be 1.
-				}
-				var col = "rgb(" + ret.join(',') + ")";
-				return col;
-			}//function genColor
+            </script>
+        </section>
+    </main>
 
-			////////////////////////////////////////////////////////////// 
-			/////////////////////// Initiate ///////////////////////////// 
-			////////////////////////////////////////////////////////////// 
-			
-			//d3.timer(function() { drawCanvas(context) });
-			function animate() {
-				drawCanvas(context);
-				window.requestAnimationFrame(animate);
-			}
-			window.requestAnimationFrame(animate);
-
-		}//drawAll
-	</script>
-	
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ka7Sk0Gln4gmtz2MlQnikT1wXgYsOg+OMhuP+IlRH9sENBO0LRn5q+8nbTov4+1p" crossorigin="anonymous"></script>
 </body>
 </html>
